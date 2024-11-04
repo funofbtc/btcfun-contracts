@@ -108,11 +108,29 @@ library FunPool {
             revert("err chain");
     }
 
+    function bridged() internal view returns (IBridged) {
+        uint chainid = chainId();
+        if(chainid == 4200)         // Merlin Mainnet
+            return IBridged(0xa212d68499947960cd3A24861E788E7C38c0fb9D);
+        else if(chainid == 686868)  // Merlin Testnet
+            return IBridged(0x53750303Ca54905e6fb6161ebc70AF61C9000C69);
+        else
+            revert("err chain");
+    }
+
     function chainId() internal view returns (uint id) {
         assembly { id := chainid() }
     }
 }    
 
+
+interface IBridged {
+    function erc20TokenInfoSupported(IERC20 token) external view returns(bool);
+}
+
+interface ICappedERC20 is IERC20 {
+    function cap() external view returns(uint);
+}
 
 interface IWETH {
     function deposit() external payable;
