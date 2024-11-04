@@ -11,6 +11,10 @@ contract BtcFun is Sets {
 
     bytes32 internal constant _feeRate_             = "feeRate";
     int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
+    //这个_feeRate_5pct_没有用到么？配置给addPool的是多少呢？
+
+    //token信息最好一个结构体管理，更清晰明了。
+
 
     mapping (string => IERC20) public tokens;
     mapping (IERC20 => IERC20) public currencies;
@@ -23,6 +27,8 @@ contract BtcFun is Sets {
 	mapping (IERC20 => mapping (address => uint)) public claimedOf;
     mapping (IERC20 => uint) public tokenIds;
     mapping (IERC20 => address[]) public offerors;
+
+    //缺少统计模块： offer、airdrop、refound 操作进度管理（多少人，多少金额）
 
     function offerorN(IERC20 token) public view returns(uint) {  return offerors[token].length;  }
 
@@ -40,28 +46,7 @@ contract BtcFun is Sets {
         _;
     }
 
-    //function _createToken(string memory name, uint8 decimals, uint totalSupply, IERC20 currency, uint amount, uint quota, uint start, uint expiry) internal returns(IERC20 token) {
-    //    require(tokens[name] == IERC20(address(0)), "Token exists!");
-    //    token = new ERC20(name, name, decimals, totalSupply);
-    //    tokens[name] = token;
-    //    currencies[token] = currency;
-    //    amounts[token] = amount;
-    //    quotas[token] = quota;
-    //    starts[token] = start;
-    //    expiries[token] = expiry;
-    //    emit CreateToken(name, decimals, totalSupply, token, currency, amount, quota, start, expiry);
-    //}
-    //event CreateToken(string name, uint8 decimals, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
-    //
-    //function createToken_(string memory name, uint8 decimals, uint totalSupply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable governance returns(IERC20 token) {
-    //    token = _createToken(name, decimals, totalSupply, currency, amount, quota, start, expiry);
-    //    FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
-    //    if(pre > 0)
-    //        _offer(token, pre);
-    //}
-    //
-    //function createToken(string memory name, uint8 decimals, uint totalSupply, address currency, uint amount, uint quota, uint start, uint expiry, string memory txid, uint8[] memory v, bytes32[] memory r, bytes32[] memory s) external returns(IERC20 token) {
-    //}
+    //作废代码直接删除就好，不用保留。
 
     function createPool(IERC20 token, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
@@ -74,6 +59,8 @@ contract BtcFun is Sets {
         currencies[token] = currency;
         amounts[token] = amount;
         quotas[token] = quota;
+
+        //截止时间判断：start<expiry and block.time<expiry
         starts[token] = start;
         expiries[token] = expiry;
         FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
@@ -83,6 +70,7 @@ contract BtcFun is Sets {
     }
     event CreatePool(string indexed name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
 
+    //函数名更新：getValidAmount
 	function checkAmount(IERC20 token, uint amount) public view returns(uint) {
         uint quota = quotas[token];
         uint offered = offeredOf[token][msg.sender];
@@ -92,19 +80,27 @@ contract BtcFun is Sets {
             amount = amounts[token] - totalOffered[token];
         return amount;
     }
-    
+
+    //签名一般有截止时间，只在一定时间段有效
+    //现在ecrecovery验证签名，审计说有可扩展性攻击问题，导致多个签名都可以验签通过。推荐用ECDSA.recover校验，参考之前给的例子。
     function offer(IERC20 token, uint amount, uint8 v, bytes32 r, bytes32 s) public payable nonReentrant pauseable {
 		require(Config.getA("signatory") == ecrecover(keccak256(abi.encode(FunPool.chainId(), token, msg.sender, offeredOf[token][msg.sender], amount)), v, r, s), "invalid signature");
         _offer(token, amount);
     }
 
 	function _offer(IERC20 token, uint amount) internal {
+        //amount + token，进行校验。
+        //require(amount > 0, "invalid amount");
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
+
         IERC20 currency = currencies[token];
 		require(block.timestamp >= starts[token], "it's not time yet");
 		require(block.timestamp <= expiries[token], "expired");
+        //validAmount = getValidAmount(token, amount) 后面都是 validAmount
         amount = checkAmount(token, amount);
 		require(amount > 0, "no quota");
 		//require(offeredOf[token][msg.sender] == 0, "offered already");
+        //每个人可以募资多次么？
         if(offeredOf[token][msg.sender] == 0)
             offerors[token].push(msg.sender);
 		offeredOf[token][msg.sender] += amount;
@@ -119,53 +115,78 @@ contract BtcFun is Sets {
             require(currency.balanceOf(msg.sender) >= amount, "balance not enough");
             currency.safeTransferFrom(msg.sender, address(this), amount);
         }
+        //事件添加 currency字段
 		emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], totalOffered[token]);
         if(totalOffered[token] >= amounts[token])
+            //金额也加上，OfferCompleted(token, currency, totalOffered[token]);
             emit Completed(token);
 	}
 	event Offer(IERC20 indexed token, address indexed addr, uint amount, uint offered, uint total);
     event Completed(IERC20 indexed token);
 
-    //function claim(IERC20 token) external nonReentrant pauseable {
-    //    return _claim(token, msg.sender);
-    //}
-    function _claim(IERC20 token, address sender) internal {
+    //public用户也可以自己给自己或者别人，进行空投；如果有人想尽早领取空投的话。
+    //命名 airdropAccount
+    //参数 sender 统一改成 to
+    function _claim(IERC20 token, address to) public nonReentrant pauseable {
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
         require(totalOffered[token] == amounts[token], block.timestamp <= expiries[token] ? "offer unfinished" : "offer failed, call refund instead");
+
+        //这里addPool最后一个参数什么意思，是不是collect受益人？要不要单独配置？ Config.getA(_governor_)，
         if(token.balanceOf(address(this)) == token.totalSupply())
             tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA(_governor_));
-        require(offeredOf[token][sender] >  0, "not offered");
-        require(claimedOf[token][sender] == 0, "claimed already");
-        uint volume = offeredOf[token][sender] * IERC20(token).totalSupply() / 2 / amounts[token];
-        claimedOf[token][sender] = volume;
-        token.safeTransfer(sender, volume);
-        emit Claim(token, sender, volume);
+        require(offeredOf[token][to] >  0, "not offered");
+        require(claimedOf[token][to] == 0, "claimed already");
+
+        uint volume = offeredOf[token][to] * IERC20(token).totalSupply() / 2 / amounts[token];
+        claimedOf[token][to] = volume;
+        token.safeTransfer(to, volume);
+        //emit AirdropAccount(msg.sender, token, to, volume, currency, offeredOf[token][sender]);
+        emit Claim(token, to, volume);
     }
     event Claim(IERC20 indexed token, address indexed addr, uint volume);
-    
+
+    //定义maxAirdropCount = 500，每次最多给500个用户空投
+    //命名 airdrop
     function airClaim(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
+        //require(count > 0 && count <= maxAirdropCount, "invalid count");
+        //require(offset < offerors[token].length, "invalid offset");
+
         uint N = Math.min(offset + count, offerorN(token));
+
         for(uint i = offset; i < N; i++) {
-            address sender = offerors[token][i];
-            if(claimedOf[token][sender] == 0)
-                _claim(token, sender);
+            //参数 sender 统一改成 to
+            address to = offerors[token][i];
+            if(claimedOf[token][to] == 0)
+                _claim(token, to);
         }
     }
-    
+
+    //用户也可以自己给自己或者别人，进行空投；如果有人想尽早领取空投的话。
+    //命名 refund
+    //参数 sender 统一改成 to
     function airRefund(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
+        //require(count > 0 && count <= maxAirdropCount, "invalid count");
+        //require(offset < offerors[token].length, "invalid offset");
+
         uint N = Math.min(offset + count, offerorN(token));
         for(uint i = offset; i < N; i++) {
+            //参数 sender 统一改成 to
             address sender = offerors[token][i];
             if(offeredOf[token][sender] > 0)
                 _refund(token, sender);
         }
     }
-    
-    //function refund(IERC20 token) external nonReentrant pauseable {
-    //    return _refund(token, msg.sender);
-    //}
+
+
+    //public用户也可以自己给自己或者别人，进行退还；如果有人想尽早退还的话。
+    //命名 refundAccount
+    //参数 sender 统一改成 to
     function _refund(IERC20 token, address sender) internal {
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
         require(block.timestamp > expiries[token], "not expired yet");
-        require(totalOffered[token] < amounts[token], "offer finished, call claim instead");
+        require(totalOffered[token] < amounts[token], "offer finished, call claim instead"); // call airdrop instead
         uint amount = offeredOf[token][sender];
         require(amount > 0, "not offered or refund already");
         offeredOf[token][sender] = 0;
@@ -174,18 +195,22 @@ contract BtcFun is Sets {
             Address.sendValue(payable(sender), amount);
         else
             currency.safeTransfer(sender, amount);
-        emit Refund(token, sender, amount);
+        emit Refund(token, sender, amount); //添加 currency 字段
     }
     event Refund(IERC20 indexed token, address indexed addr, uint amount);
 
     function collect(IERC20 token) external nonReentrant pauseable {
+        //require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
         IERC20 currency = currencies[token];
         if(address(currency) == address(0))
             currency = IERC20(ILiquidityManager(FunPool.liquidityManager()).WETH9());
         uint amount = currency.balanceOf(address(this));
         uint volume = token.balanceOf(address(this));
         ILocker(FunPool.locker()).collect(tokenIds[token]);
+        //governor接收人是否单独配置，governor 后面是多签管理。
         address governor = Config.getA(_governor_);
+
+        //collect后，这里把currency多出来的amount，全部提走了。
         currency.safeTransfer(governor, currency.balanceOf(address(this)) - amount);
         token.safeTransfer(governor, token.balanceOf(address(this)) - volume);
     }
