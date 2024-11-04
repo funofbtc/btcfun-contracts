@@ -6,6 +6,10 @@ pragma abicoder v2;
 import "./Include.sol";
 import "./iZiSwap.sol";
 
+//新需求：
+//1. 不到他地址的cap上限 可以一直打。（目前看已经是这样了）
+//2. 到时间没成功退款 需要有个合约自动退款 但退款需要扣除 X% 作为gas的补偿和手续费 （需要添加处理下，X%可以管理员修改）
+
 contract BtcFun is Sets {
 	using SafeERC20 for IERC20;
 
