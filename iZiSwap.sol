@@ -7,7 +7,8 @@ import "./Include.sol";
 library FunPool {
 	using SafeERC20 for IERC20;
 
-    uint24 internal constant _fee_              = 10000;     // 1.00%
+    uint24 internal constant _fee_              = 10000;     // 1.00%   merlinswap交易收1%给lp，对应collect方法收集1%手续费。给设置的手续费地址。
+
 
     function createPool(address token, uint volume, address currency, uint amount) internal returns (address pool) {
         ILiquidityManager lm = ILiquidityManager(liquidityManager());
