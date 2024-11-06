@@ -40,6 +40,11 @@ contract BtcFun is Sets {
         _;
     }
 
+    function pause(bool b) external  {
+        require(isGovernor() || msg.sender == Config.getA("pauseAdmin"), "admin only");
+        Config.set("pause", b ? 1 : 0);
+    }
+
     //function _createToken(string memory name, uint8 decimals, uint totalSupply, IERC20 currency, uint amount, uint quota, uint start, uint expiry) internal returns(IERC20 token) {
     //    require(tokens[name] == IERC20(address(0)), "Token exists!");
     //    token = new ERC20(name, name, decimals, totalSupply);
@@ -70,6 +75,7 @@ contract BtcFun is Sets {
         token.transferFrom(msg.sender, address(this), totalSupply);
         string memory name = ERC20(address(token)).symbol();
         require(tokens[name] == IERC20(address(0)), "Token exists!");
+        require(start < expiry && block.timestamp < expiry, "too early expiry");
         tokens[name] = token;
         currencies[token] = currency;
         amounts[token] = amount;
@@ -93,12 +99,14 @@ contract BtcFun is Sets {
         return amount;
     }
     
-    function offer(IERC20 token, uint amount, uint8 v, bytes32 r, bytes32 s) public payable nonReentrant pauseable {
-		require(Config.getA("signatory") == ecrecover(keccak256(abi.encode(FunPool.chainId(), token, msg.sender, offeredOf[token][msg.sender], amount)), v, r, s), "invalid signature");
+    function offer(IERC20 token, uint amount, uint timestamp, uint8 v, bytes32 r, bytes32 s) public payable nonReentrant pauseable {
+		require(timestamp <= block.timestamp && block.timestamp <= timestamp + 180, "Signature expires");
+        require(Config.getA("signatory") == ecrecover(keccak256(abi.encode(FunPool.chainId(), token, msg.sender, offeredOf[token][msg.sender], amount, timestamp)), v, r, s), "invalid signature");
         _offer(token, amount);
     }
 
 	function _offer(IERC20 token, uint amount) internal {
+        require(address(token) != address(0), "invalid token");
         IERC20 currency = currencies[token];
 		require(block.timestamp >= starts[token], "it's not time yet");
 		require(block.timestamp <= expiries[token], "expired");
@@ -121,48 +129,50 @@ contract BtcFun is Sets {
         }
 		emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], totalOffered[token]);
         if(totalOffered[token] >= amounts[token])
-            emit Completed(token);
+            emit Completed(token, currency, totalOffered[token]);
 	}
 	event Offer(IERC20 indexed token, address indexed addr, uint amount, uint offered, uint total);
-    event Completed(IERC20 indexed token);
+    event Completed(IERC20 indexed token, IERC20 indexed currency, uint totalOffered);
 
-    //function claim(IERC20 token) external nonReentrant pauseable {
-    //    return _claim(token, msg.sender);
-    //}
+    function airdropAccount(IERC20 token, address sender) external nonReentrant pauseable {
+        return _claim(token, sender);
+    }
     function _claim(IERC20 token, address sender) internal {
         require(totalOffered[token] == amounts[token], block.timestamp <= expiries[token] ? "offer unfinished" : "offer failed, call refund instead");
         if(token.balanceOf(address(this)) == token.totalSupply())
-            tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA(_governor_));
+            tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
         require(offeredOf[token][sender] >  0, "not offered");
         require(claimedOf[token][sender] == 0, "claimed already");
         uint volume = offeredOf[token][sender] * IERC20(token).totalSupply() / 2 / amounts[token];
         claimedOf[token][sender] = volume;
         token.safeTransfer(sender, volume);
-        emit Claim(token, sender, volume);
+        emit Claim(msg.sender, token, sender, volume, currencies[token], offeredOf[token][sender]);
     }
-    event Claim(IERC20 indexed token, address indexed addr, uint volume);
+    event Claim(address sender, IERC20 indexed token, address indexed to, uint volume, IERC20 indexed currency, uint offered);
     
-    function airClaim(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+    function airdrop(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+        require(count <= 500, "too many count");
         uint N = Math.min(offset + count, offerorN(token));
         for(uint i = offset; i < N; i++) {
-            address sender = offerors[token][i];
-            if(claimedOf[token][sender] == 0)
-                _claim(token, sender);
+            address to = offerors[token][i];
+            if(claimedOf[token][to] == 0)
+                _claim(token, to);
         }
     }
     
-    function airRefund(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+    function refund(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
+        require(count <= 500, "too many count");
         uint N = Math.min(offset + count, offerorN(token));
         for(uint i = offset; i < N; i++) {
-            address sender = offerors[token][i];
-            if(offeredOf[token][sender] > 0)
-                _refund(token, sender);
+            address to = offerors[token][i];
+            if(offeredOf[token][to] > 0)
+                _refund(token, to);
         }
     }
     
-    //function refund(IERC20 token) external nonReentrant pauseable {
-    //    return _refund(token, msg.sender);
-    //}
+    function refundAccount(IERC20 token, address sender) external nonReentrant pauseable {
+        return _refund(token, sender);
+    }
     function _refund(IERC20 token, address sender) internal {
         require(block.timestamp > expiries[token], "not expired yet");
         require(totalOffered[token] < amounts[token], "offer finished, call claim instead");
@@ -170,30 +180,36 @@ contract BtcFun is Sets {
         require(amount > 0, "not offered or refund already");
         offeredOf[token][sender] = 0;
 		IERC20 currency = currencies[token];
-        if(address(currency) == address(0))
-            Address.sendValue(payable(sender), amount);
-        else
-            currency.safeTransfer(sender, amount);
-        emit Refund(token, sender, amount);
+        uint fee = amount * Config.get("refundFeeRate") / 1e18;
+        address feeTo = Config.getA("feeTo");
+        if(address(currency) == address(0)) {
+            Address.sendValue(payable(feeTo), fee);
+            Address.sendValue(payable(sender), amount - fee);
+        } else {
+            currency.safeTransfer(feeTo, fee);
+            currency.safeTransfer(sender, amount - fee);
+        }
+        emit Refund(token, sender, amount - fee, currency);
     }
-    event Refund(IERC20 indexed token, address indexed addr, uint amount);
+    event Refund(IERC20 indexed token, address indexed addr, uint amount, IERC20 indexed currency);
 
     function collect(IERC20 token) external nonReentrant pauseable {
+        require(address(token) != address(0), "invalid token");
         IERC20 currency = currencies[token];
         if(address(currency) == address(0))
             currency = IERC20(ILiquidityManager(FunPool.liquidityManager()).WETH9());
         uint amount = currency.balanceOf(address(this));
         uint volume = token.balanceOf(address(this));
         ILocker(FunPool.locker()).collect(tokenIds[token]);
-        address governor = Config.getA(_governor_);
-        currency.safeTransfer(governor, currency.balanceOf(address(this)) - amount);
-        token.safeTransfer(governor, token.balanceOf(address(this)) - volume);
+        address swapFeeTo = Config.getA("swapFeeTo");
+        currency.safeTransfer(swapFeeTo, currency.balanceOf(address(this)) - amount);
+        token.safeTransfer(swapFeeTo, token.balanceOf(address(this)) - volume);
     }
 
     function unlock(IERC20 token) external nonReentrant pauseable {
         uint tokenId = tokenIds[token];
         ILocker(FunPool.locker()).withdraw(tokenId);
-        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA(_governor_), tokenId);
+        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA("swapFeeTo"), tokenId);
     }
     
 }
