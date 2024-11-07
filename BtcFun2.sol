@@ -11,6 +11,7 @@ contract BtcFun is Sets {
 
     bytes32 internal constant _feeRate_             = "feeRate";
     int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
+    uint internal constant _max_count_              = 500;
 
     mapping (string => IERC20) public tokens;
     mapping (IERC20 => IERC20) public currencies;
@@ -34,6 +35,8 @@ contract BtcFun is Sets {
         _;
         entered = false;
     }
+
+	mapping (IERC20 => mapping (address => uint)) public refundedOf;
 
     modifier pauseable {
         require(Config.get("pause") == 0, "paused");
@@ -79,20 +82,20 @@ contract BtcFun is Sets {
         tokens[name] = token;
         currencies[token] = currency;
         amounts[token] = amount;
-        quotas[token] = quota;
         starts[token] = start;
         expiries[token] = expiry;
         FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
         emit CreatePool(name, totalSupply, token, currency, amount, quota, start, expiry);
         if(pre > 0)
             _offer(token, pre);
+        quotas[token] = quota;
     }
     event CreatePool(string indexed name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
 
 	function checkAmount(IERC20 token, uint amount) public view returns(uint) {
         uint quota = quotas[token];
         uint offered = offeredOf[token][msg.sender];
-        if(!isGovernor() && quota > 0 && amount + offered > quota)
+        if(quota > 0 && amount + offered > quota)
 		    amount = quota > offered ? quota - offered : 0;
         if(amount + totalOffered[token] > amounts[token])
             amount = amounts[token] - totalOffered[token];
@@ -151,7 +154,7 @@ contract BtcFun is Sets {
     event Claim(address sender, IERC20 indexed token, address indexed to, uint volume, IERC20 indexed currency, uint offered);
     
     function airdrop(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
-        require(count <= 500, "too many count");
+        require(count <= _max_count_, "too many count");
         uint N = Math.min(offset + count, offerorN(token));
         for(uint i = offset; i < N; i++) {
             address to = offerors[token][i];
@@ -161,7 +164,7 @@ contract BtcFun is Sets {
     }
     
     function refund(IERC20 token, uint offset, uint count) external nonReentrant pauseable {
-        require(count <= 500, "too many count");
+        require(count <= _max_count_, "too many count");
         uint N = Math.min(offset + count, offerorN(token));
         for(uint i = offset; i < N; i++) {
             address to = offerors[token][i];
@@ -176,22 +179,24 @@ contract BtcFun is Sets {
     function _refund(IERC20 token, address sender) internal {
         require(block.timestamp > expiries[token], "not expired yet");
         require(totalOffered[token] < amounts[token], "offer finished, call claim instead");
-        uint amount = offeredOf[token][sender];
-        require(amount > 0, "not offered or refund already");
-        offeredOf[token][sender] = 0;
-		IERC20 currency = currencies[token];
-        uint fee = amount * Config.get("refundFeeRate") / 1e18;
+        uint offered  = offeredOf [token][sender];
+        uint refunded = refundedOf[token][sender];
+        require(offered > 0 && refunded == 0, "not offered or refund already");
+        uint fee = offered * Config.get("refundFeeRate") / 1e18;
+        refunded = offered - fee;
+        refundedOf[token][sender] = refunded;
         address feeTo = Config.getA("feeTo");
+		IERC20 currency = currencies[token];
         if(address(currency) == address(0)) {
             Address.sendValue(payable(feeTo), fee);
-            Address.sendValue(payable(sender), amount - fee);
+            Address.sendValue(payable(sender), refunded);
         } else {
             currency.safeTransfer(feeTo, fee);
-            currency.safeTransfer(sender, amount - fee);
+            currency.safeTransfer(sender, refunded);
         }
-        emit Refund(token, sender, amount - fee, currency);
+        emit Refund(token, sender, refunded, currency);
     }
-    event Refund(IERC20 indexed token, address indexed addr, uint amount, IERC20 indexed currency);
+    event Refund(IERC20 indexed token, address indexed addr, uint refunded, IERC20 indexed currency);
 
     function collect(IERC20 token) external nonReentrant pauseable {
         require(address(token) != address(0), "invalid token");
