@@ -90,7 +90,7 @@ contract BtcFun is Sets {
             _offer(token, pre);
         quotas[token] = quota;
     }
-    event CreatePool(string indexed name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
+    event CreatePool(string name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
 
 	function checkAmount(IERC20 token, uint amount) public view returns(uint) {
         uint quota = quotas[token];
@@ -134,7 +134,7 @@ contract BtcFun is Sets {
         if(totalOffered[token] >= amounts[token])
             emit Completed(token, currency, totalOffered[token]);
 	}
-	event Offer(IERC20 indexed token, address indexed addr, uint amount, uint offered, uint total);
+	event Offer(IERC20 indexed token, address indexed sender, uint amount, uint offered, uint total);
     event Completed(IERC20 indexed token, IERC20 indexed currency, uint totalOffered);
 
     function airdropAccount(IERC20 token, address sender) external nonReentrant pauseable {
@@ -196,7 +196,7 @@ contract BtcFun is Sets {
         }
         emit Refund(token, sender, refunded, currency);
     }
-    event Refund(IERC20 indexed token, address indexed addr, uint refunded, IERC20 indexed currency);
+    event Refund(IERC20 indexed token, address indexed sender, uint refunded, IERC20 indexed currency);
 
     function collect(IERC20 token) external nonReentrant pauseable {
         require(address(token) != address(0), "invalid token");
