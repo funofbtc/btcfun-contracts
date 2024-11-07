@@ -43,33 +43,18 @@ contract BtcFun is Sets {
         _;
     }
 
-    function pause(bool b) external  {
+    function pause() external {
         require(isGovernor() || msg.sender == Config.getA("pauseAdmin"), "admin only");
-        Config.set("pause", b ? 1 : 0);
+        Config.set("pause", 1);
+        emit Pause();
     }
+    event Pause();
 
-    //function _createToken(string memory name, uint8 decimals, uint totalSupply, IERC20 currency, uint amount, uint quota, uint start, uint expiry) internal returns(IERC20 token) {
-    //    require(tokens[name] == IERC20(address(0)), "Token exists!");
-    //    token = new ERC20(name, name, decimals, totalSupply);
-    //    tokens[name] = token;
-    //    currencies[token] = currency;
-    //    amounts[token] = amount;
-    //    quotas[token] = quota;
-    //    starts[token] = start;
-    //    expiries[token] = expiry;
-    //    emit CreateToken(name, decimals, totalSupply, token, currency, amount, quota, start, expiry);
-    //}
-    //event CreateToken(string name, uint8 decimals, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
-    //
-    //function createToken_(string memory name, uint8 decimals, uint totalSupply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable governance returns(IERC20 token) {
-    //    token = _createToken(name, decimals, totalSupply, currency, amount, quota, start, expiry);
-    //    FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
-    //    if(pre > 0)
-    //        _offer(token, pre);
-    //}
-    //
-    //function createToken(string memory name, uint8 decimals, uint totalSupply, address currency, uint amount, uint quota, uint start, uint expiry, string memory txid, uint8[] memory v, bytes32[] memory r, bytes32[] memory s) external returns(IERC20 token) {
-    //}
+    function unpause() external governance {
+        Config.set("pause", 0);
+        emit Unpause();
+    }
+    event Unpause();
 
     function createPool(IERC20 token, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
