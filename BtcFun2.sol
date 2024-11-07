@@ -11,7 +11,7 @@ contract BtcFun is Sets {
 
     bytes32 internal constant _feeRate_             = "feeRate";
     int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
-    uint internal constant _max_count_              = 500;
+    uint internal constant _max_count_              = 200;
 
     mapping (string => IERC20) public tokens;
     mapping (IERC20 => IERC20) public currencies;
