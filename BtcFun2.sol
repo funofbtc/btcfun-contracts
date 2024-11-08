@@ -11,7 +11,7 @@ contract BtcFun is Sets {
 
     bytes32 internal constant _feeRate_             = "feeRate";
     int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
-    uint internal constant _max_count_              = 200;
+    uint internal constant _max_count_              = 130;
 
     mapping (string => IERC20) public tokens;
     mapping (IERC20 => IERC20) public currencies;
@@ -69,13 +69,13 @@ contract BtcFun is Sets {
         amounts[token] = amount;
         starts[token] = start;
         expiries[token] = expiry;
-        FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
-        emit CreatePool(name, totalSupply, token, currency, amount, quota, start, expiry);
+        address pool = FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
+        emit CreatePool(name, totalSupply, token, currency, amount, quota, start, expiry, pool);
         if(pre > 0)
             _offer(token, pre);
         quotas[token] = quota;
     }
-    event CreatePool(string name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry);
+    event CreatePool(string name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry, address indexed pool);
 
 	function checkAmount(IERC20 token, uint amount) public view returns(uint) {
         uint quota = quotas[token];
@@ -100,7 +100,6 @@ contract BtcFun is Sets {
 		require(block.timestamp <= expiries[token], "expired");
         amount = checkAmount(token, amount);
 		require(amount > 0, "no quota");
-		//require(offeredOf[token][msg.sender] == 0, "offered already");
         if(offeredOf[token][msg.sender] == 0)
             offerors[token].push(msg.sender);
 		offeredOf[token][msg.sender] += amount;
