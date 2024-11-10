@@ -10,7 +10,7 @@ contract BtcFun is Sets {
 	using SafeERC20 for IERC20;
 
     bytes32 internal constant _feeRate_             = "feeRate";
-    int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
+    //int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
     uint internal constant _max_count_              = 130;
 
     mapping (string => IERC20) public tokens;
@@ -87,14 +87,14 @@ contract BtcFun is Sets {
         return amount;
     }
     
-    function offer(IERC20 token, uint amount, uint timestamp, uint8 v, bytes32 r, bytes32 s) public payable nonReentrant pauseable {
-		require(timestamp <= block.timestamp && block.timestamp <= timestamp + 180, "Signature expires");
-        require(Config.getA("signatory") == ecrecover(keccak256(abi.encode(FunPool.chainId(), token, msg.sender, offeredOf[token][msg.sender], amount, timestamp)), v, r, s), "invalid signature");
+    function offer(IERC20 token, uint amount, uint expiry, uint8 v, bytes32 r, bytes32 s) public payable nonReentrant pauseable {
+		require(expiry >= block.timestamp, "Signature expires");
+        require(Config.getA("signatory") == ecrecover(keccak256(abi.encode(FunPool.chainId(), token, msg.sender, offeredOf[token][msg.sender], amount, expiry)), v, r, s) && uint(s) <= 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0, "invalid signature");
         _offer(token, amount);
     }
 
 	function _offer(IERC20 token, uint amount) internal {
-        require(address(token) != address(0), "invalid token");
+        require(amounts[token] > 0, "invalid token");
         IERC20 currency = currencies[token];
 		require(block.timestamp >= starts[token], "it's not time yet");
 		require(block.timestamp <= expiries[token], "expired");
@@ -115,9 +115,11 @@ contract BtcFun is Sets {
             currency.safeTransferFrom(msg.sender, address(this), amount);
         }
 		emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], totalOffered[token]);
-        if(totalOffered[token] >= amounts[token])
+        if(totalOffered[token] >= amounts[token]) {
             emit Completed(token, currency, totalOffered[token]);
-	}
+            tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
+        }
+    }
 	event Offer(IERC20 indexed token, address indexed sender, uint amount, uint offered, uint total);
     event Completed(IERC20 indexed token, IERC20 indexed currency, uint totalOffered);
 
@@ -126,8 +128,6 @@ contract BtcFun is Sets {
     }
     function _claim(IERC20 token, address sender) internal {
         require(totalOffered[token] == amounts[token], block.timestamp <= expiries[token] ? "offer unfinished" : "offer failed, call refund instead");
-        if(token.balanceOf(address(this)) == token.totalSupply())
-            tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
         require(offeredOf[token][sender] >  0, "not offered");
         require(claimedOf[token][sender] == 0, "claimed already");
         uint volume = offeredOf[token][sender] * IERC20(token).totalSupply() / 2 / amounts[token];
