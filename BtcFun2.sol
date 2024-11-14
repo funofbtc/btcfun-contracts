@@ -37,6 +37,7 @@ contract BtcFun is Sets {
     }
 
 	mapping (IERC20 => mapping (address => uint)) public refundedOf;
+	mapping (IERC20 => uint) public supplies;
 
     modifier pauseable {
         require(Config.get("pause") == 0, "paused");
@@ -58,24 +59,29 @@ contract BtcFun is Sets {
 
     function createPool(IERC20 token, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
-        uint totalSupply = token.totalSupply();
-        require(totalSupply == ICappedERC20(address(token)).cap() && totalSupply == token.balanceOf(msg.sender), "not all token");
-        token.transferFrom(msg.sender, address(this), totalSupply);
+        uint supply = Math.min(token.allowance(msg.sender, address(this)), token.balanceOf(msg.sender));
+        require(supply > 0, "none allowance nor balance");
+        address pool = address(0);
+        if(supply == token.totalSupply() && supply == ICappedERC20(address(token)).cap())
+            pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
+        else
+            require(isGovernor(), "partial token pool can only be created by governor");
+        token.transferFrom(msg.sender, address(this), supply);
         string memory name = ERC20(address(token)).symbol();
         require(tokens[name] == IERC20(address(0)), "Token exists!");
         require(start < expiry && block.timestamp < expiry, "too early expiry");
         tokens[name] = token;
+        supplies[token] = supply;
         currencies[token] = currency;
         amounts[token] = amount;
         starts[token] = start;
         expiries[token] = expiry;
-        address pool = FunPool.createPool(address(token), totalSupply / 2, address(currency), amount);
-        emit CreatePool(name, totalSupply, token, currency, amount, quota, start, expiry, pool);
+        emit CreatePool(name, supply, token, currency, amount, quota, start, expiry, pool);
         if(pre > 0)
             _offer(token, pre);
         quotas[token] = quota;
     }
-    event CreatePool(string name, uint totalSupply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry, address indexed pool);
+    event CreatePool(string name, uint supply, IERC20 indexed token, IERC20 indexed currency, uint amount, uint quota, uint start, uint expiry, address indexed pool);
 
 	function checkAmount(IERC20 token, uint amount) public view returns(uint) {
         uint quota = quotas[token];
@@ -114,10 +120,16 @@ contract BtcFun is Sets {
             require(currency.balanceOf(msg.sender) >= amount, "balance not enough");
             currency.safeTransferFrom(msg.sender, address(this), amount);
         }
-		emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], totalOffered[token]);
-        if(totalOffered[token] >= amounts[token]) {
-            emit Completed(token, currency, totalOffered[token]);
-            tokenIds[token] = FunPool.addPool(address(token), token.totalSupply()/2, address(currencies[token]), amounts[token], int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
+		uint total = totalOffered[token];
+        emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], total);
+        if(total >= amounts[token]) {
+            emit Completed(token, currency, total);
+            if(supplies[token] == token.totalSupply())
+                tokenIds[token] = FunPool.addPool(address(token), supplies[token]/2, address(currency), total, int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
+            else if(address(currency) == address(0))
+                Address.sendValue(payable(Config.getA(_governor_)), total);
+            else
+                currency.safeTransfer(Config.getA(_governor_), total);
         }
     }
 	event Offer(IERC20 indexed token, address indexed sender, uint amount, uint offered, uint total);
@@ -130,7 +142,10 @@ contract BtcFun is Sets {
         require(totalOffered[token] == amounts[token], block.timestamp <= expiries[token] ? "offer unfinished" : "offer failed, call refund instead");
         require(offeredOf[token][sender] >  0, "not offered");
         require(claimedOf[token][sender] == 0, "claimed already");
-        uint volume = offeredOf[token][sender] * IERC20(token).totalSupply() / 2 / amounts[token];
+        uint supply = supplies[token];
+        if(supply == token.totalSupply())
+            supply /= 2;
+        uint volume = offeredOf[token][sender] * supply / amounts[token];
         claimedOf[token][sender] = volume;
         token.safeTransfer(sender, volume);
         emit Claim(msg.sender, token, sender, volume, currencies[token], offeredOf[token][sender]);
@@ -195,7 +210,7 @@ contract BtcFun is Sets {
         token.safeTransfer(swapFeeTo, token.balanceOf(address(this)) - volume);
     }
 
-    function unlock(IERC20 token) external nonReentrant pauseable {
+    function unlock(IERC20 token) external nonReentrant pauseable governance {
         uint tokenId = tokenIds[token];
         ILocker(FunPool.locker()).withdraw(tokenId);
         ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA("swapFeeTo"), tokenId);
