@@ -57,10 +57,8 @@ contract BtcFun is Sets {
     }
     event Unpause();
 
-    function createPool(IERC20 token, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
+    function createPool(IERC20 token, uint supply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
-        uint supply = Math.min(token.allowance(msg.sender, address(this)), token.balanceOf(msg.sender));
-        require(supply > 0, "none allowance nor balance");
         address pool = address(0);
         if(supply == token.totalSupply() && supply == ICappedERC20(address(token)).cap())
             pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
@@ -197,7 +195,7 @@ contract BtcFun is Sets {
     }
     event Refund(IERC20 indexed token, address indexed sender, uint refunded, IERC20 indexed currency);
 
-    function collect(IERC20 token) external nonReentrant pauseable {
+    function collect(IERC20 token) external nonReentrant {
         require(address(token) != address(0), "invalid token");
         IERC20 currency = currencies[token];
         if(address(currency) == address(0))
@@ -210,10 +208,10 @@ contract BtcFun is Sets {
         token.safeTransfer(swapFeeTo, token.balanceOf(address(this)) - volume);
     }
 
-    function unlock(IERC20 token) external nonReentrant pauseable governance {
+    function unlock(IERC20 token) external nonReentrant governance {
         uint tokenId = tokenIds[token];
         ILocker(FunPool.locker()).withdraw(tokenId);
-        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA("swapFeeTo"), tokenId);
+        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA(_governor_), tokenId);
     }
     
 }
