@@ -2987,7 +2987,7 @@ library Config {
 contract Setable {
     bytes32 internal constant _governor_  = "governor";
     bool public inited;
-    function init(address msgSender) public {
+    function initSetable(address msgSender) public {
         if (!inited) {
             Config.setA(_governor_, msgSender);
             inited = true;

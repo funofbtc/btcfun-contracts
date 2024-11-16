@@ -9,6 +9,7 @@ import "./iZiSwap.sol";
 
 contract BtcFun is Initializable, Sets {
 	using SafeERC20 for IERC20;
+    string public constant version = "1.0.0";
 
     bytes32 internal constant _feeRate_             = "feeRate";
     //int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
@@ -59,11 +60,7 @@ contract BtcFun is Initializable, Sets {
     event Unpause();
 
     function initialize(address msgSender) external virtual initializer {
-//        Setable.init(msgSender);
-//        Config.setA(_governor_, msgSender);
-//        Setable.init(msgSender);
-        Config.setA(_governor_, msgSender);
-        inited = true;
+        initSetable(msgSender);
     }
 
     function createPool(IERC20 token, uint supply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
