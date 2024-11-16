@@ -2986,13 +2986,16 @@ library Config {
 
 contract Setable {
     bytes32 internal constant _governor_  = "governor";
-
-    constructor() {
-        Config.setA(_governor_, msg.sender);
+    bool public inited;
+    function init(address msgSender) public {
+        if (!inited) {
+            Config.setA(_governor_, msgSender);
+            inited = true;
+        }
     }
 
     function isGovernor() view public returns (bool) {
-        return msg.sender == Config.getA(_governor_) || msg.sender == ERC1967Utils.getAdmin();
+        return inited || msg.sender == Config.getA(_governor_) || msg.sender == ERC1967Utils.getAdmin();
     }
     
     function _governance() internal view {
@@ -3010,6 +3013,9 @@ contract Sets is Setable {
         bytes32 key;
         uint    value;
     }
+
+//    constructor(address msgSender) Setable(msgSender) {
+//    }
 
     function sets_(KeyValue[] calldata s) external governance {
         for(uint i=0; i<s.length; i++)
