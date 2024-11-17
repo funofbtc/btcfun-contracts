@@ -3,11 +3,13 @@
 pragma solidity ^0.8.20;
 pragma abicoder v2;
 
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./Include.sol";
 import "./iZiSwap.sol";
 
-contract BtcFun is Sets {
+contract BtcFun is Initializable, Sets {
 	using SafeERC20 for IERC20;
+    string public constant version = "1.0.0";
 
     bytes32 internal constant _feeRate_             = "feeRate";
     //int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
@@ -56,6 +58,10 @@ contract BtcFun is Sets {
         emit Unpause();
     }
     event Unpause();
+
+    function initialize(address governor) external virtual initializer {
+        initSetable(governor);
+    }
 
     function createPool(IERC20 token, uint supply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");

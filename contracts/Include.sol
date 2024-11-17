@@ -2986,15 +2986,17 @@ library Config {
 
 contract Setable {
     bytes32 internal constant _governor_  = "governor";
-
-    constructor() {
-        Config.setA(_governor_, msg.sender);
+    bool internal inited;
+    function initSetable(address governor) public {
+        require(!inited, "already inited");
+        Config.setA(_governor_, governor);
+        inited = true;
     }
 
     function isGovernor() view public returns (bool) {
-        return msg.sender == Config.getA(_governor_) || msg.sender == ERC1967Utils.getAdmin();
+        return !inited || msg.sender == Config.getA(_governor_);
     }
-    
+
     function _governance() internal view {
         require(isGovernor(), "governor only");
     }
