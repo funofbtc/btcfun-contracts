@@ -2987,17 +2987,16 @@ library Config {
 contract Setable {
     bytes32 internal constant _governor_  = "governor";
     bool internal inited;
-    function initSetable(address msgSender) public {
-        if (!inited) {
-            Config.setA(_governor_, msgSender);
-            inited = true;
-        }
+    function initSetable(address governor) public {
+        require(!inited, "already inited");
+        Config.setA(_governor_, governor);
+        inited = true;
     }
 
     function isGovernor() view public returns (bool) {
-        return inited || msg.sender == Config.getA(_governor_);
+        return !inited || msg.sender == Config.getA(_governor_);
     }
-    
+
     function _governance() internal view {
         require(isGovernor(), "governor only");
     }

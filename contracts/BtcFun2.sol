@@ -59,8 +59,8 @@ contract BtcFun is Initializable, Sets {
     }
     event Unpause();
 
-    function initialize(address msgSender) external virtual initializer {
-        initSetable(msgSender);
+    function initialize(address governor) external virtual initializer {
+        initSetable(governor);
     }
 
     function createPool(IERC20 token, uint supply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
