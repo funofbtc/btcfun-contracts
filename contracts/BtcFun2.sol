@@ -70,7 +70,7 @@ contract BtcFun is Initializable, Sets {
             pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
         else
             require(isGovernor(), "partial token pool can only be created by governor");
-        token.transferFrom(msg.sender, address(this), supply);
+        token.safeTransferFrom(msg.sender, address(this), supply);
         string memory name = ERC20(address(token)).symbol();
         require(tokens[name] == IERC20(address(0)), "Token exists!");
         require(start < expiry && block.timestamp < expiry, "too early expiry");
@@ -217,7 +217,7 @@ contract BtcFun is Initializable, Sets {
     function unlock(IERC20 token) external nonReentrant governance {
         uint tokenId = tokenIds[token];
         ILocker(FunPool.locker()).withdraw(tokenId);
-        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA(_governor_), tokenId);
+        ILiquidityManager(FunPool.liquidityManager()).safeTransferFrom(address(this), Config.getA(_governor_), tokenId);
     }
     
 }
