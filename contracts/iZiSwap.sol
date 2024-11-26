@@ -43,8 +43,8 @@ library FunPool {
                 pr              : pr,
                 xLim            : uint128(volume),
                 yLim            : uint128(amount),
-                amountXMin      : 0,
-                amountYMin      : 0,
+                amountXMin      : uint128(volume * 985 / 1000),
+                amountYMin      : uint128(amount * 985 / 1000),
                 deadline        : block.timestamp
             }));
         else
