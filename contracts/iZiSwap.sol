@@ -23,7 +23,8 @@ library FunPool {
         pool = lm.createPool(token0, token1, _fee_, initialPoint);
     }
 
-    function addPool(address token, uint volume, address currency, uint amount, int24 feeRate, address feeTo) internal returns (uint tokenId){
+    // function addPool(address token, uint volume, address currency, uint amount, int24 feeRate, address feeTo) internal returns (uint tokenId){
+    function addPool(address token, uint volume, address currency, uint amount) internal returns (uint tokenId){
         ILiquidityManager lm = ILiquidityManager(liquidityManager());
         if(currency == address(0)) {
             currency = lm.WETH9();
@@ -31,10 +32,11 @@ library FunPool {
         }
         IERC20(token).approve(address(lm), volume);
         IERC20(currency).approve(address(lm), amount);
-        (int24 pl, int24 pr) = calcRange(token, currency, feeRate);
-        uint amountLP;   
+//        (int24 pl, int24 pr) = calcRange(token, currency, feeRate);
+        (int24 pl, int24 pr) = calcRange(token, currency);
+//        uint amountLP;
         if(token <= currency)
-            (tokenId, , , amountLP) = lm.mint(ILiquidityManager.MintParam({
+            (tokenId, , ,) = lm.mint(ILiquidityManager.MintParam({
                 miner           : address(this),
                 tokenX          : token,
                 tokenY          : currency,
@@ -48,7 +50,7 @@ library FunPool {
                 deadline        : block.timestamp
             }));
         else
-            (tokenId, , amountLP, ) = lm.mint(ILiquidityManager.MintParam({
+            (tokenId, , , ) = lm.mint(ILiquidityManager.MintParam({
                 miner           : address(this),
                 tokenX          : currency,
                 tokenY          : token,
@@ -61,16 +63,17 @@ library FunPool {
                 amountYMin      : uint128(volume * 985 / 1000),
                 deadline        : block.timestamp
             }));
-        if(feeRate != 0)
-            IERC20(currency).safeTransfer(feeTo, amount - amountLP);
+//        if(feeRate != 0)
+//            IERC20(currency).safeTransfer(feeTo, amount - amountLP);
         lm.approve(locker(), tokenId);
         ILocker(locker()).lock(tokenId, 180 days);
     }
 
-    function calcRange(address token, address currency, int24 rate) view internal returns (int24 pl, int24 pr) {
+//    function calcRange(address token, address currency, int24 rate) view internal returns (int24 pl, int24 pr) {
+    function calcRange(address token, address currency) view internal returns (int24 pl, int24 pr) {
         (address token0, address token1) = token <= currency ? (token, currency) : (currency, token);
-        if(token <= currency)
-            rate = -rate;
+//        if(token <= currency)
+//            rate = -rate;
         IiZiSwapPool pool = IiZiSwapPool(IiZiSwapFactory(ILiquidityManager(liquidityManager()).factory()).pool(token0, token1, _fee_));
         int24 leftMostPt  = pool.leftMostPt();
         int24 rightMostPt = pool.rightMostPt();
@@ -78,10 +81,10 @@ library FunPool {
         (,int24 currentPoint,,,,,,) = pool.state();
         pr = MaxMinMath.min(rightMostPt, currentPoint + rightMostPt / 2) / pointDelta * pointDelta;
         pl = MaxMinMath.max(leftMostPt, currentPoint * 2 - pr) / pointDelta * pointDelta;
-        if(rate < 0)
-            pl = MaxMinMath.max(pl, currentPoint + rate) / pointDelta * pointDelta;
-        else if(rate > 0)
-            pr = MaxMinMath.min(pr, currentPoint + rate) / pointDelta * pointDelta;
+//        if(rate < 0)
+//            pl = MaxMinMath.max(pl, currentPoint + rate) / pointDelta * pointDelta;
+//        else if(rate > 0)
+//            pr = MaxMinMath.min(pr, currentPoint + rate) / pointDelta * pointDelta;
     }
 
     function liquidityManager() internal view returns (address) {

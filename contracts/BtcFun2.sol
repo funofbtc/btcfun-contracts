@@ -26,6 +26,7 @@ contract BtcFun is Initializable, Sets {
 	mapping (IERC20 => mapping (address => uint)) public claimedOf;
     mapping (IERC20 => uint) public tokenIds;
     mapping (IERC20 => address[]) public offerors;
+    mapping (IERC20 => uint) public feeRate;
 
     function offerorN(IERC20 token) public view returns(uint) {  return offerors[token].length;  }
 
@@ -66,8 +67,10 @@ contract BtcFun is Initializable, Sets {
     function createPool(IERC20 token, uint supply, IERC20 currency, uint amount, uint quota, uint start, uint expiry, uint pre) external payable nonReentrant pauseable {
         require(FunPool.bridged().erc20TokenInfoSupported(token), "token is not bridged");
         address pool = address(0);
+        uint _feeRate = uint(Config.get(_feeRate_));
         if(supply == token.totalSupply() && supply == ICappedERC20(address(token)).cap())
-            pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
+//            pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
+            pool = FunPool.createPool(address(token), supply / 2, address(currency), amount-getFeeRateAmount(amount, _feeRate));
         else
             require(isGovernor(), "partial token pool can only be created by governor");
         token.safeTransferFrom(msg.sender, address(this), supply);
@@ -80,6 +83,7 @@ contract BtcFun is Initializable, Sets {
         amounts[token] = amount;
         starts[token] = start;
         expiries[token] = expiry;
+        feeRate[token] = _feeRate;
         emit CreatePool(name, supply, token, currency, amount, quota, start, expiry, pool);
         if(pre > 0)
             _offer(token, pre);
@@ -128,8 +132,11 @@ contract BtcFun is Initializable, Sets {
         emit Offer(token, msg.sender, amount, offeredOf[token][msg.sender], total);
         if(total >= amounts[token]) {
             emit Completed(token, currency, total);
-            if(supplies[token] == token.totalSupply())
-                tokenIds[token] = FunPool.addPool(address(token), supplies[token]/2, address(currency), total, int24(int(Config.get(_feeRate_))), Config.getA("feeTo"));
+            if(supplies[token] == token.totalSupply()){
+                uint feeRateAmount = getFeeRateAmount(total, feeRate[token]);
+                IERC20(currency).safeTransfer(Config.getA("feeTo"), feeRateAmount);
+                tokenIds[token] = FunPool.addPool(address(token), supplies[token]/2, address(currency), amount - feeRateAmount);
+            }
             else if(address(currency) == address(0))
                 Address.sendValue(payable(Config.getA(_governor_)), total);
             else
@@ -138,6 +145,10 @@ contract BtcFun is Initializable, Sets {
     }
 	event Offer(IERC20 indexed token, address indexed sender, uint amount, uint offered, uint total);
     event Completed(IERC20 indexed token, IERC20 indexed currency, uint totalOffered);
+
+    function getFeeRateAmount(uint amount, uint _feeRate) internal pure returns(uint) {
+        return amount * _feeRate / 1e18;
+    }
 
     function airdropAccount(IERC20 token, address sender) external nonReentrant pauseable {
         return _claim(token, sender);
@@ -217,7 +228,7 @@ contract BtcFun is Initializable, Sets {
     function unlock(IERC20 token) external nonReentrant governance {
         uint tokenId = tokenIds[token];
         ILocker(FunPool.locker()).withdraw(tokenId);
-        ILiquidityManager(FunPool.liquidityManager()).safeTransferFrom(address(this), Config.getA(_governor_), tokenId);
+        ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA(_governor_), tokenId);
     }
     
 }
