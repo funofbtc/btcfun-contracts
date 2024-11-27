@@ -12,7 +12,6 @@ contract BtcFun is Initializable, Sets {
     string public constant version = "1.0.0";
 
     bytes32 internal constant _feeRate_             = "feeRate";
-    //int24 internal constant _feeRate_5pct_          = 59918;       // = -log(0.05^2, 1.0001)
     uint internal constant _max_count_              = 130;
 
     mapping (string => IERC20) public tokens;
@@ -69,7 +68,6 @@ contract BtcFun is Initializable, Sets {
         address pool = address(0);
         uint _feeRate = uint(Config.get(_feeRate_));
         if(supply == token.totalSupply() && supply == ICappedERC20(address(token)).cap())
-//            pool = FunPool.createPool(address(token), supply / 2, address(currency), amount);
             pool = FunPool.createPool(address(token), supply / 2, address(currency), amount-getFeeRateAmount(amount, _feeRate));
         else
             require(isGovernor(), "partial token pool can only be created by governor");
