@@ -23,7 +23,7 @@ library FunPool {
         pool = lm.createPool(token0, token1, _fee_, initialPoint);
     }
 
-    function addPool(address token, uint volume, address currency, uint amount) internal returns (uint tokenId){
+    function addPool(address token, uint volume, address currency, uint amount) internal returns (uint tokenId, uint amountLP){
         ILiquidityManager lm = ILiquidityManager(liquidityManager());
         if(currency == address(0)) {
             currency = lm.WETH9();
@@ -33,7 +33,7 @@ library FunPool {
         IERC20(currency).approve(address(lm), amount);
         (int24 pl, int24 pr) = calcRange(token, currency);
         if(token <= currency)
-            (tokenId, , ,) = lm.mint(ILiquidityManager.MintParam({
+            (tokenId, , , amountLP) = lm.mint(ILiquidityManager.MintParam({
                 miner           : address(this),
                 tokenX          : token,
                 tokenY          : currency,
@@ -47,7 +47,7 @@ library FunPool {
                 deadline        : block.timestamp
             }));
         else
-            (tokenId, , , ) = lm.mint(ILiquidityManager.MintParam({
+            (tokenId, , amountLP, ) = lm.mint(ILiquidityManager.MintParam({
                 miner           : address(this),
                 tokenX          : currency,
                 tokenY          : token,

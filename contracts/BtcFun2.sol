@@ -26,6 +26,7 @@ contract BtcFun is Initializable, Sets {
     mapping (IERC20 => uint) public tokenIds;
     mapping (IERC20 => address[]) public offerors;
     mapping (IERC20 => uint) public feeRate;
+    mapping (IERC20 => bool) public addedLiquidity;
 
     function offerorN(IERC20 token) public view returns(uint) {  return offerors[token].length;  }
 
@@ -82,6 +83,7 @@ contract BtcFun is Initializable, Sets {
         starts[token] = start;
         expiries[token] = expiry;
         feeRate[token] = _feeRate;
+
         emit CreatePool(name, supply, token, currency, amount, quota, start, expiry, pool);
         if(pre > 0)
             _offer(token, pre);
@@ -132,8 +134,11 @@ contract BtcFun is Initializable, Sets {
             emit Completed(token, currency, total);
             if(supplies[token] == token.totalSupply()){
                 uint feeRateAmount = getFeeRateAmount(total, feeRate[token]);
-                IERC20(currency).safeTransfer(Config.getA("feeTo"), feeRateAmount);
-                tokenIds[token] = FunPool.addPool(address(token), supplies[token]/2, address(currency), amount - feeRateAmount);
+                uint amountLP;
+                (tokenIds[token],amountLP) = FunPool.addPool(address(token), supplies[token]/2, address(currency), amount - feeRateAmount);
+                IERC20(currency).safeTransfer(Config.getA("feeTo"), amount - amountLP);
+                addedLiquidity[token] = true;
+                emit AddLiquidity(token, msg.sender);
             }
             else if(address(currency) == address(0))
                 Address.sendValue(payable(Config.getA(_governor_)), total);
@@ -153,6 +158,7 @@ contract BtcFun is Initializable, Sets {
     }
     function _claim(IERC20 token, address sender) internal {
         require(totalOffered[token] == amounts[token], block.timestamp <= expiries[token] ? "offer unfinished" : "offer failed, call refund instead");
+        require(addedLiquidity[token], "need to add liquidity");
         require(offeredOf[token][sender] >  0, "not offered");
         require(claimedOf[token][sender] == 0, "claimed already");
         uint supply = supplies[token];
@@ -228,5 +234,11 @@ contract BtcFun is Initializable, Sets {
         ILocker(FunPool.locker()).withdraw(tokenId);
         ILiquidityManager(FunPool.liquidityManager()).transferFrom(address(this), Config.getA(_governor_), tokenId);
     }
-    
+
+    function addLiquidity(IERC20 token) external nonReentrant governance {
+        require(amounts[token] > 0, "invalid token");
+        addedLiquidity[token] = true;
+        emit AddLiquidity(token, msg.sender);
+    }
+    event AddLiquidity(IERC20 indexed token, address indexed sender);
 }
