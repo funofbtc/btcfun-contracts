@@ -236,7 +236,7 @@ contract BtcFun is Initializable, Sets {
     }
 
     function addLiquidity(IERC20 token) external nonReentrant governance {
-        require(amounts[token] > 0, "invalid token");
+        require(amounts[token] > 0, "invalid token ");
         addedLiquidity[token] = true;
         emit AddLiquidity(token, msg.sender);
     }
