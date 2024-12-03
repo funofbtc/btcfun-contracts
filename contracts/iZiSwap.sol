@@ -42,8 +42,8 @@ library FunPool {
                 pr              : pr,
                 xLim            : uint128(volume),
                 yLim            : uint128(amount),
-                amountXMin      : uint128(volume * 985 / 1000),
-                amountYMin      : uint128(amount * 985 / 1000),
+                amountXMin      : 0,
+                amountYMin      : 0,
                 deadline        : block.timestamp
             }));
         else
@@ -56,8 +56,8 @@ library FunPool {
                 pr              : pr,
                 xLim            : uint128(amount),
                 yLim            : uint128(volume),
-                amountXMin      : uint128(amount * 985 / 1000),
-                amountYMin      : uint128(volume * 985 / 1000),
+                amountXMin      : 0,
+                amountYMin      : 0,
                 deadline        : block.timestamp
             }));
         lm.approve(locker(), tokenId);
